@@ -23,10 +23,27 @@ void asset_file_render_begin(asset_file_t f)
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glEnableClientState(GL_NORMAL_ARRAY);
 #if ASSET_USE_FLOAT
-	glVertexPointer(3, GL_FLOAT, 0, f->f_verts);
+    if (f->vbo == 0) {
+        glGenBuffers(1, &f->vbo);
+        if (glGetError() == GL_NO_ERROR) {
+            glBindBuffer(GL_ARRAY_BUFFER, f->vbo);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * f->f_hdr->h_verts * 3, f->f_verts, GL_STATIC_DRAW);
+            printf("buffer ok!\n");
+        } else {
+            f->vbo = 0;
+        }
+    }
+
+    if (f->vbo > 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, f->vbo);
+        glVertexPointer(3, GL_FLOAT, 0, 0);
+    } else {
+    	glVertexPointer(3, GL_FLOAT, 0, f->f_verts);
+    }
 #else
 	glVertexPointer(3, GL_SHORT, 0, f->f_verts);
 #endif
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glNormalPointer(GL_FLOAT, 0, f->f_norms);
 }
 
