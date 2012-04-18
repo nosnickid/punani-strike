@@ -133,6 +133,7 @@ chopper_t chopper_comanche(float x, float y, float h)
 void chopper_render(chopper_t chopper, renderer_t r, float lerp, light_t l)
 {
 	float heading;
+	GLfloat pos[4];
 
 	heading = chopper->oldheading - (chopper->avelocity * lerp);
 
@@ -141,6 +142,13 @@ void chopper_render(chopper_t chopper, renderer_t r, float lerp, light_t l)
 	renderer_rotate(r, heading * (180.0 / M_PI), 0, 1, 0);
 	renderer_rotate(r, chopper->velocity * 2.5, 1, 0, 0);
 	renderer_rotate(r, 3.0 * chopper->velocity * (chopper->avelocity * M_PI * 2.0), 0, 0, 1);
+	if (l) {
+		glGetLightfv(GL_LIGHT0, GL_POSITION, pos);
+		printf("pre: %.3f %.3f %.3f\n", pos[0], pos[1], pos[2]);
+		light_render(l);
+		glGetLightfv(GL_LIGHT0, GL_POSITION, pos);
+		printf("pst: %.3f %.3f %.3f\n", pos[0], pos[1], pos[2]);
+	}
 
 	glColor4f(0.15, 0.2, 0.15, 1.0);
 	asset_render(chopper->fuselage, r, l);
@@ -155,11 +163,14 @@ void chopper_render(chopper_t chopper, renderer_t r, float lerp, light_t l)
 	 * or just render a blurry disc of shadow
 	*/
 	glColor4f(0.15, 0.15, 0.15, 1.0);
-	renderer_rotate(r, lerp * (72.0), 0, 1, 0);
+	//renderer_rotate(r, lerp * (72.0), 0, 1, 0);
+	renderer_rotate(r, (72.0), 0, 1, 0);
+	if (l) light_render(l);
 	glFlush();
-	asset_render(chopper->rotor, r, l);
+	//asset_render(chopper->rotor, r, l);
 
 	glPopMatrix();
+	if (l) light_render(l);
 	asset_file_render_end(chopper_gfx);
 }
 

@@ -342,6 +342,32 @@ static void render_end(void)
 	SDL_GL_SwapBuffers();
 }
 
+GLuint stencilhax = 0;
+GLuint depthhax = 0;
+GLfloat *buf;
+
+void debug_show_buffer(GLenum glBuffer, int vx, int vy, int x, int y, int w, int h, GLuint texture) {
+	glReadPixels(0, 0, vx, vy, glBuffer, GL_FLOAT, buf);
+	GLdouble totes = 0;
+	int k;
+
+	for(k = 0; k < vx * vy; k++) {
+		totes = fmax(totes, fabs(buf[k]));
+	}
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glPixelTransferf(GL_RED_SCALE, 1.0f / totes);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE16, vx, vy, 0, GL_LUMINANCE, GL_FLOAT, buf);
+
+	glBegin(GL_QUADS);
+	glTexCoord2f(0, 1); glVertex3f(x, y, 0);
+	glTexCoord2f(0, 0); glVertex3f(x, y + h , 0);
+	glTexCoord2f(1, 0); glVertex3f(x + w, y + h, 0);
+	glTexCoord2f(1, 1); glVertex3f(x + w, y, 0);
+	glEnd();
+
+}
+
+
 int renderer_main(renderer_t r)
 {
 	SDL_Event e;
@@ -397,6 +423,31 @@ int renderer_main(renderer_t r)
 		/* Render a scene */
 		render_begin();
 		game_render(g, lerp);
+
+
+		if (game_state(g) == 2) {
+			if (stencilhax == 0) {
+				glGenTextures(1, &stencilhax);
+				glBindTexture(GL_TEXTURE_2D, stencilhax);
+				glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+				glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+				glGenTextures(1, &depthhax);
+				glBindTexture(GL_TEXTURE_2D, depthhax);
+				glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+				glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+
+				buf = (GLfloat*)malloc(r->vidx * r->vidy * sizeof(GLfloat));
+			}
+
+			renderer_render_2d(r);
+			glColor3f(1,1,1);
+
+			float width = 320;
+			float height = 240;
+			debug_show_buffer(GL_DEPTH_COMPONENT, r->vidx, r->vidy, width * 1, 0, width, height, depthhax);
+			debug_show_buffer(GL_STENCIL_INDEX, r->vidx, r->vidy,   width * 0, 0, width, height, stencilhax);
+		}
+
 		render_end();
 		gl_frames++;
 
@@ -412,7 +463,6 @@ int renderer_main(renderer_t r)
 
 	return EXIT_SUCCESS;
 }
-
 void renderer_exit(renderer_t r, int code)
 {
 	game_mode_exit(r->game, code);

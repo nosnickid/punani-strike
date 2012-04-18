@@ -16,6 +16,8 @@
 #include <SDL.h>
 #include <math.h>
 
+#define SHADOW_DEBUG 0
+
 /* Build the VBOs */
 void asset_file_render_prepare(asset_file_t f) {
 	if (f->f_vbo_verts == 0) {
@@ -83,7 +85,7 @@ static void render_vol(const fp_t *v, const float *n, uint16_t tri[3], vec3_t li
 #else
 
 #define M_INFINITY 200.0f
-static void render_vol(const fp_t *s, const float *n,
+static void render_vol(const fp_t *verts, const float *norms,
 			uint16_t tri[3], const vec3_t light_pos)
 {
 	unsigned int i;
@@ -92,9 +94,9 @@ static void render_vol(const fp_t *s, const float *n,
 	vec3_t a, b, c, d;
 
 	for(i = 0; i < 3; i++) {
-		surf[i][0] = s[tri[i] + 0];
-		surf[i][1] = s[tri[i] + 1];
-		surf[i][2] = s[tri[i] + 2];
+		surf[i][0] = verts[tri[i] + 0];
+		surf[i][1] = verts[tri[i] + 1];
+		surf[i][2] = verts[tri[i] + 2];
 	}
 
 	/* don't cast shadows for triangles not facing light */
@@ -147,6 +149,8 @@ static void translate_light_pos(renderer_t r, vec3_t light_pos)
 	light_pos[2] = -res[2];
 }
 
+#define STENCIL_EXT 1
+
 static void render_shadow(asset_t a, renderer_t r, light_t l)
 {
 	const struct asset_desc *d = a->a_owner->f_desc + a->a_idx;
@@ -167,10 +171,11 @@ static void render_shadow(asset_t a, renderer_t r, light_t l)
 		tri[1] = a->a_indices[i + 1] * 3;
 		tri[2] = a->a_indices[i + 2] * 3;
 
-#if 1
+#if !SHADOW_DEBUG
 		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 		glDepthMask(GL_FALSE);
-		if ( GLEW_EXT_stencil_two_side ) {
+		if ( STENCIL_EXT && GLEW_EXT_stencil_two_side ) {
+            glEnable(GL_STENCIL_TEST_TWO_SIDE_EXT);
 			glDisable(GL_CULL_FACE);
 		}else{
 			glEnable(GL_CULL_FACE);
@@ -179,36 +184,38 @@ static void render_shadow(asset_t a, renderer_t r, light_t l)
 		glEnable(GL_POLYGON_OFFSET_FILL);
 		glPolygonOffset(0.0f, 100.0f);
 
-		if ( GLEW_EXT_stencil_two_side ) {
+		if ( STENCIL_EXT && GLEW_EXT_stencil_two_side ) {
 			glActiveStencilFaceEXT(GL_BACK);
 			glStencilFunc(GL_ALWAYS, 0, ~0);
 			glStencilOp(GL_KEEP, GL_INCR_WRAP_EXT, GL_KEEP);
 		}else{
 			glCullFace(GL_BACK);
-			glStencilFunc(GL_ALWAYS, 0x0, 0xff);
+			glStencilFunc(GL_ALWAYS, 0x0, ~0);
 			glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
 			render_vol(verts, norms, tri, light_pos);
 		}
 
-		if ( GLEW_EXT_stencil_two_side ) {
+		if ( STENCIL_EXT && GLEW_EXT_stencil_two_side ) {
 			glActiveStencilFaceEXT(GL_FRONT);
 			glStencilFunc(GL_ALWAYS, 0, ~0);
 			glStencilOp(GL_KEEP, GL_DECR_WRAP_EXT, GL_KEEP);
 			glEnable(GL_STENCIL_TEST_TWO_SIDE_EXT);
 		}else{
 			glCullFace(GL_FRONT);
-			glStencilFunc(GL_ALWAYS, 0x0, 0xff);
-			glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+			glStencilFunc(GL_ALWAYS, 0x0, ~0);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
 		}
 #endif
 
 		render_vol(verts, norms, tri, light_pos);
 
+#if !SHADOW_DEBUG
 		glDisable(GL_POLYGON_OFFSET_FILL);
 		glDisable(GL_CULL_FACE);
 		glDisable(GL_STENCIL_TEST);
 		glDisable(GL_STENCIL_TEST_TWO_SIDE_EXT);
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+#endif
 	}
 }
 
