@@ -55,6 +55,9 @@ asset_file_t asset_file_open(const char *fn)
 		((float *)f->f_norms)[i] = fp_to_float(norms[i]);
 #endif
 
+	/* cache shadow volume projections */
+	f->f_shadow_verts = (float *) malloc(sizeof(*f->f_shadow_verts) * 3 * f->f_hdr->h_verts);
+
 	/* success */
 	f->f_ref = 1;
 	goto out;

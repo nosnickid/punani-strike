@@ -84,13 +84,15 @@ struct _asset_file {
 	const struct asset_desc *f_desc;
 	struct _asset **f_db;
 	const uint8_t *f_buf;
-	const fp_t *f_verts;
+	const float *f_verts;
 	const float *f_norms;
 	idx_t *f_idx_begin;
 	size_t f_sz;
 	unsigned int f_ref;
 	GLuint f_vbo_norms;
 	GLuint f_vbo_verts;
+
+	float *f_shadow_verts;
 };
 
 struct _asset {

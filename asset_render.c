@@ -31,7 +31,7 @@ void asset_file_render_prepare(asset_file_t f) {
 	}
 	if (f->f_vbo_norms == 0) {
 		glGenBuffers(1, &f->f_vbo_norms);
-		if (glGetError() == GL_NO_ERROR) {
+	 	if (glGetError() == GL_NO_ERROR) {
 			glBindBuffer(GL_ARRAY_BUFFER, f->f_vbo_norms);
 			glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * f->f_hdr->h_verts * 3, f->f_norms, GL_STATIC_DRAW);
 		} else {
@@ -83,14 +83,9 @@ static void render_vol(const fp_t *v, const float *n, uint16_t tri[3], vec3_t li
 	glEnd();
 }
 #else
-
 #define M_INFINITY 200.0f
-static void render_vol(const fp_t *verts, const float *norms,
-			uint16_t tri[3], const vec3_t light_pos)
-{
+static void get_shadow_verts(const fp_t *verts, uint16_t tri[3], const vec3_t light_pos, float *v, vec3_t *surf) {
 	unsigned int i;
-	vec3_t surf[3];
-	float v[3][3];
 	vec3_t a, b, c, d;
 
 	for(i = 0; i < 3; i++) {
@@ -111,10 +106,20 @@ static void render_vol(const fp_t *verts, const float *norms,
 		return;
 
 	for(i = 0; i < 3; i++) {
-		v[i][0] = surf[i][0] + light_pos[0] * M_INFINITY;
-		v[i][1] = surf[i][1] + light_pos[1] * M_INFINITY;
-		v[i][2] = surf[i][2] + light_pos[2] * M_INFINITY;
+		v[i * 3 + 0] = surf[i][0] + light_pos[0] * M_INFINITY;
+		v[i * 3 + 1] = surf[i][1] + light_pos[1] * M_INFINITY;
+		v[i * 3 + 2] = surf[i][2] + light_pos[2] * M_INFINITY;
 	}
+}
+
+static void render_vol(const fp_t *verts, const float *norms,
+			uint16_t tri[3], const vec3_t light_pos, float *shadow_verts)
+{
+	unsigned int i;
+	float v[3][3];
+	vec3_t surf[3];
+
+	get_shadow_verts(verts, tri, light_pos, (float *)v, surf);
 
 #if 1
 	glBegin(GL_TRIANGLES);
@@ -157,11 +162,14 @@ static void render_shadow(asset_t a, renderer_t r, light_t l)
 	unsigned int i;
 	const float *norms;
 	const fp_t *verts;
+	float *surf;
 	vec3_t light_pos;
 	uint16_t tri[3];
 
 	verts = a->a_owner->f_verts;
 	norms = a->a_owner->f_norms;
+	
+	surf = a->a_owner->f_shadow_verts;
 
 	light_get_pos(l, light_pos);
 	translate_light_pos(r, light_pos);
@@ -175,7 +183,7 @@ static void render_shadow(asset_t a, renderer_t r, light_t l)
 		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 		glDepthMask(GL_FALSE);
 		if ( STENCIL_EXT && GLEW_EXT_stencil_two_side ) {
-            glEnable(GL_STENCIL_TEST_TWO_SIDE_EXT);
+			glEnable(GL_STENCIL_TEST_TWO_SIDE_EXT);
 			glDisable(GL_CULL_FACE);
 		}else{
 			glEnable(GL_CULL_FACE);
@@ -192,7 +200,7 @@ static void render_shadow(asset_t a, renderer_t r, light_t l)
 			glCullFace(GL_BACK);
 			glStencilFunc(GL_ALWAYS, 0x0, ~0);
 			glStencilOp(GL_KEEP, GL_KEEP, GL_DECR_WRAP_EXT);
-			render_vol(verts, norms, tri, light_pos);
+			render_vol(verts, norms, tri, light_pos, surf);
 		}
 
 		if ( STENCIL_EXT && GLEW_EXT_stencil_two_side ) {
@@ -206,7 +214,7 @@ static void render_shadow(asset_t a, renderer_t r, light_t l)
 		}
 #endif
 
-		render_vol(verts, norms, tri, light_pos);
+		render_vol(verts, norms, tri, light_pos, surf);
 
 #if SHADOW_RENDER
 		glDisable(GL_POLYGON_OFFSET_FILL);
