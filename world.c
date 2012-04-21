@@ -39,7 +39,7 @@ static void *ctor(renderer_t r, void *common)
 		goto out;
 
 	world->render = r;
-	renderer_viewangles(r, 45.0, 60.0, 0.0);
+	renderer_viewangles(r, 45.0, 45.0, 0.0);
 
 	world->map = map_load(r, "data/map/1.psm");
 	if ( NULL == world->map )

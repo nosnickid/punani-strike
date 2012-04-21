@@ -199,7 +199,7 @@ int renderer_mode(renderer_t r, const char *title,
 			unsigned int x, unsigned int y,
 			unsigned int depth, unsigned int fullscreen)
 {
-	int f = SDL_OPENGL;
+	int f = SDL_OPENGL | SDL_HWSURFACE ;
 
 	if ( r->screen )
 		SDL_Quit();
@@ -347,7 +347,8 @@ GLuint depthhax = 0;
 GLfloat *buf;
 
 void debug_show_buffer(GLenum glBuffer, int vx, int vy, int x, int y, int w, int h, GLuint texture) {
-	glReadPixels(0, 0, vx, vy, glBuffer, GL_FLOAT, buf);
+	return;
+  glReadPixels(0, 0, vx, vy, glBuffer, GL_FLOAT, buf); 
 	GLdouble totes = 0;
 	int k;
 
@@ -425,7 +426,7 @@ int renderer_main(renderer_t r)
 		game_render(g, lerp);
 
 
-		/*if (game_state(g) == 2) {
+		if (game_state(g) == 2) {
 			if (stencilhax == 0) {
 				glGenTextures(1, &stencilhax);
 				glBindTexture(GL_TEXTURE_2D, stencilhax);
@@ -445,8 +446,8 @@ int renderer_main(renderer_t r)
 			float width = 320;
 			float height = 240;
 			debug_show_buffer(GL_DEPTH_COMPONENT, r->vidx, r->vidy, width * 1, 0, width, height, depthhax);
-			debug_show_buffer(GL_STENCIL_INDEX, r->vidx, r->vidy,   width * 0, 0, width, height, stencilhax);
-		}*/
+			debug_show_buffer(GL_STENCIL_INDEX,   r->vidx, r->vidy, width * 0, 0, width, height, stencilhax);
+		}
 
 		render_end();
 		gl_frames++;
