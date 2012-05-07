@@ -6,6 +6,7 @@
 #include <punani/punani.h>
 #include <punani/punani_gl.h>
 #include <punani/console.h>
+#include <punani/cvar.h>
 
 
 /* max line len excluding null terminator */
@@ -15,6 +16,8 @@
 #define CONSOLE_VISIBLE 1
 /* todo: #define CONSOLE_MOVING :) */
 #define CONSOLE_HIDDEN 16
+
+static void con_do_input(char *input);
 
 struct _console {
 	/* one of CONSOLE_VISIBLE or CONSOLE_HIDDEN */
@@ -34,6 +37,7 @@ struct _console {
     /* line input stuff */
 	int  cursor_offs;
 	char input_line[CONSOLE_LINE_MAX_LEN + 1];
+	int  history_offs;
 };
 
 console_t con_default = NULL;
@@ -65,13 +69,9 @@ void con_printf(const char *fmt, ...)
 	con_default->line = con_default->line % CONSOLE_MAX_LINES;
 }
 
-void con_input_splice(int s0_start, int s0_end, int s1_start);
-void con_input_insert(char c);
-
 /* splice some characters out of the current input line. current input line ends up consisting of line[s0_start]..line[s0_end] + line[s1_start]..line[CONSOLE_LINE_MAX_LEN]. */
-void con_input_splice(int s0_start, int s0_end, int s1_start)
+static void con_input_splice(int s0_start, int s0_end, int s1_start)
 {
-	
 	assert(s0_end < CONSOLE_LINE_MAX_LEN);
 	assert(s0_start < CONSOLE_LINE_MAX_LEN);
 	
@@ -85,9 +85,9 @@ void con_input_splice(int s0_start, int s0_end, int s1_start)
 }
 
 /* add the typed char into the string where the cursor is. */
-void con_input_insert(char c)
+static void con_input_insert(char c)
 {
-	if (con_default->cursor_offs == CONSOLE_LINE_MAX_LEN - 1) {
+	if (con_default->cursor_offs == CONSOLE_LINE_MAX_LEN) {
 		return;
 	}
 	
@@ -105,8 +105,6 @@ void con_input_insert(char c)
 		con_default->cursor_offs++;
 	}
 }
-
-
 
 int con_keypress(int key, int down, const SDL_KeyboardEvent event)
 {
@@ -178,6 +176,25 @@ int con_keypress(int key, int down, const SDL_KeyboardEvent event)
 				if (con_default->cursor_offs < CONSOLE_LINE_MAX_LEN && con_default->input_line[con_default->cursor_offs] != '\0') con_default->cursor_offs++;
 			}
 			break;
+		case SDLK_UP:
+			/* bug here: not wrapping around the lines, breaking at the MAX_LINES point. */
+			con_default->history_offs--;
+			if (con_default->history_offs < 0) con_default->history_offs = 0;
+			strncpy(con_default->input_line, con_default->lines[con_default->history_offs], CONSOLE_LINE_MAX_LEN);
+			con_default->cursor_offs = strlen(con_default->input_line);
+			break;
+		case SDLK_DOWN:
+			if (con_default->history_offs == con_default->line - 1) {
+				/* when moving to the bottom of the stack, have a fake "empty line" waiting. */
+				con_default->history_offs++;
+				con_default->input_line[0] = '\0';
+				con_default->cursor_offs = 0;
+			} else {
+				con_default->history_offs = (con_default->history_offs + 1) % con_default->line;
+				strncpy(con_default->input_line, con_default->lines[con_default->history_offs], CONSOLE_LINE_MAX_LEN);
+				con_default->cursor_offs = strlen(con_default->input_line);
+			}
+			break;
 		case SDLK_HOME:
 			con_default->cursor_offs = 0;
 			break;
@@ -186,8 +203,10 @@ int con_keypress(int key, int down, const SDL_KeyboardEvent event)
 			break;
 		case SDLK_RETURN:
 			con_printf("%s", con_default->input_line);
+			con_do_input(con_default->input_line);
 			con_default->cursor_offs = 0;
 			con_default->input_line[0] = '\0';
+			con_default->history_offs = con_default->line;
 			break;
 		default:
 			if (key >= 0x20 && key <= 0x7F) {
@@ -200,12 +219,76 @@ int con_keypress(int key, int down, const SDL_KeyboardEvent event)
 		/* we only hide the console on escape key up, to prevent the keyup propagating into the game and quitting it. */
 		if (key == SDLK_ESCAPE) {
 			con_default->state = CONSOLE_HIDDEN;
-			return 1;
 		}
+		
+		return 1;
 	}
 	
 	return 0;
 }
+
+/* Easy string tokeniser */
+static int easy_explode(char *str, char split,
+			char **toks, int max_toks)
+{
+	char *tmp;
+	int tok;
+	int state;
+
+	for(tmp=str,state=tok=0; *tmp && tok <= max_toks; tmp++) {
+		if ( state == 0 ) {
+			if ( *tmp == split && (tok < max_toks)) {
+				toks[tok++] = NULL;
+			}else if ( !isspace(*tmp) ) {
+				state = 1;
+				toks[tok++] = tmp;
+			}
+		}else if ( state == 1 ) {
+			if ( tok < max_toks ) {
+				if ( *tmp == split || isspace(*tmp) ) {
+					*tmp = '\0';
+					state = 0;
+				}
+			}else if ( *tmp == '\n' )
+				*tmp = '\0';
+		}
+	}
+
+	return tok;
+}
+
+/* con_do_input will mangle your input string, so plz don't rely on it after passing it here. */
+static void con_do_input(char *input) {
+	char *tok[2];
+	int ntok;
+
+	/* expect <name> <val> */
+	ntok = easy_explode(input, ' ', tok, 2);
+	if ( ntok != 2 ) {
+		con_printf("bad variable: should be <obj>.<name> <val>");
+		return;
+	}
+		
+	/* expect <ns>.<name> */
+	char *var_name[2];
+	ntok = easy_explode(tok[0], '.', var_name, 2);
+	
+	if (ntok != 2) {
+		con_printf("bad variable: should be <obj>.<name> <val>");
+		return;
+	}
+	
+	/* see if we've got a matching cvar */
+	cvar_t cvar = cvar_locate(var_name[0], var_name[1]);
+	
+	if ( NULL == cvar ) {
+		con_printf("unknown variable: %s.%s", var_name[0], var_name[1]);
+		return;
+	}
+	
+	cvar_set(cvar, tok[1]);
+}
+
 
 void con_render(void) 
 {
