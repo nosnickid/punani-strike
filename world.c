@@ -12,6 +12,7 @@
 #include <punani/chopper.h>
 #include <punani/particles.h>
 #include <punani/console.h>
+#include <punani/cvar.h>
 
 
 #include "game-modes.h"
@@ -68,6 +69,8 @@ static void *ctor(renderer_t r, void *common)
 	world->font = font_load(r, "data/font/carbon.png", 16, 16);
 	if ( NULL == world->font )
 		goto out_free_light;
+		
+	cvar_load("world.cfg");
 		
 	/* success */
 	goto out;
@@ -229,6 +232,8 @@ static void render(void *priv, float lerp)
 
 static void dtor(void *priv)
 {
+	cvar_save("world.cfg");
+
 	struct _world *world = priv;
 	light_free(world->light);
 	chopper_free(world->apache);
@@ -240,33 +245,57 @@ static void keypress(void *priv, int key, int down)
 {
 	struct _world *world = priv;
 	switch(key) {
+	case SDLK_a:
 	case SDLK_LEFT:
-		chopper_control(world->apache, CHOPPER_LEFT, down);
+		chopper_control(world->apache, CHOPPER_ROTATE_LEFT, down);
 		break;
+
+	case SDLK_d:
 	case SDLK_RIGHT:
-		chopper_control(world->apache, CHOPPER_RIGHT, down);
+		chopper_control(world->apache, CHOPPER_ROTATE_RIGHT, down);
 		break;
+
+	case SDLK_w:
 	case SDLK_UP:
 		chopper_control(world->apache, CHOPPER_THROTTLE, down);
 		break;
+
+	case SDLK_s:
 	case SDLK_DOWN:
 		chopper_control(world->apache, CHOPPER_BRAKE, down);
 		break;
+
 	case SDLK_q:
+		chopper_control(world->apache, CHOPPER_STRAFE_LEFT, down);
+		break;
+
+	case SDLK_e:
+		chopper_control(world->apache, CHOPPER_STRAFE_RIGHT, down);
+		break;
+
 	case SDLK_ESCAPE:
 		renderer_exit(world->render, GAME_MODE_COMPLETE);
 		break;
+
 	case SDLK_SPACE:
 		if ( down )
 			chopper_fire(world->apache, world->render, world->fcnt);
 		break;
+
 	case SDLK_1:
 		if ( down )
 			world->do_shadows = !world->do_shadows;
 		break;
+
 	default:
 		break;
 	}
+}
+
+static void grabbed(void *priv)
+{
+	struct _world *world = priv;
+	chopper_control_release_all(world->apache);
 }
 
 static void frame(void *priv)
@@ -288,5 +317,6 @@ const struct game_ops world_ops = {
 	.dtor = dtor,
 	.new_frame = frame,
 	.render = render,
+	.grabbed = grabbed,
 	.keypress = keypress,
 };

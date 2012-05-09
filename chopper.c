@@ -54,11 +54,17 @@ struct _chopper {
 	unsigned int last_fire;
 	float missile_speed;
 
-	int throttle_time; /* in frames */
-	float velocity; /* in pixels per frame */
-	float heading; /* in radians */
+	int f_throttle_time; /* in frames */
+	int s_throttle_time; /* in frames */
+
+	float fvelocity; /* in pixels per frame */
+	float svelocity; /* in pixels per frame */
 	float avelocity;
-	float oldvelocity;
+
+	float heading; /* in radians */
+
+	float oldfvelocity;
+	float oldfselocity;
 	float oldheading;
 };
 
@@ -86,7 +92,7 @@ static chopper_t get_chopper(const char *file, const vec3_t pos, float heading)
 	if ( NULL == f )
 		goto out_free_file;
 
-	c->fuselage = asset_file_get(f, "fuselage_green.g");
+	c->fuselage = asset_file_get(f, "fuselage.g");
 	if ( NULL == c->fuselage )
 		goto out_free_rotor;
 
@@ -124,7 +130,7 @@ out:
 
 chopper_t chopper_comanche(const vec3_t pos, float h)
 {
-	return get_chopper("data/comanche.db", pos, h);
+	return get_chopper("data/apache.db", pos, h);
 }
 
 void chopper_render(chopper_t chopper, renderer_t r, float lerp, light_t l)
@@ -135,16 +141,14 @@ void chopper_render(chopper_t chopper, renderer_t r, float lerp, light_t l)
 
 	glPushMatrix();
 	renderer_rotate(r, heading * (180.0 / M_PI), 0, 1, 0);
-	renderer_rotate(r, chopper->velocity * 5.0, 1, 0, 0);
-	renderer_rotate(r, 3.0 * chopper->velocity * (-chopper->avelocity * M_PI * 2.0), 0, 0, 1);
-
-	glColor4f(0.15, 0.2, 0.15, 1.0);
+	renderer_rotate(r, chopper->fvelocity * 5.0, 1, 0, 0);
+	renderer_rotate(r, 3.0 * chopper->fvelocity * (-chopper->avelocity * M_PI * 2.0), 0, 0, 1);
+	renderer_rotate(r, chopper->svelocity * 3.0, 0, 0, 1);
 
 	asset_file_dirty_shadows(chopper->asset);
 	asset_file_render_begin(chopper->asset, r, l);
 	asset_render(chopper->fuselage, r, l);
 
-	glColor4f(0.15, 0.15, 0.15, 1.0);
 	renderer_rotate(r, lerp * (72.0), 0, 1, 0);
 	glFlush();
 
@@ -179,8 +183,6 @@ void chopper_render_missiles(chopper_t c, renderer_t r,
 		vec3_t pos;
 		
 		glPushMatrix();
-		glColor4f(1.0, 1.0, 1.0, 1.0);
-		glFlush();
 
 		pos[0] = m->m_oldorigin[0] + m->m_move[0] * lerp;
 		pos[1] = m->m_oldorigin[1] + m->m_move[1] * lerp;
@@ -271,36 +273,65 @@ void chopper_think(chopper_t chopper)
 {
 	int tctrl = 0;
 	int rctrl = 0;
+	int sctrl = 0;
 
 	/* first sum all inputs to total throttle and cyclical control */
 	if ( chopper->input & (1 << CHOPPER_THROTTLE) )
 		tctrl += 1;
 	if ( chopper->input & (1 << CHOPPER_BRAKE) )
 		tctrl -= 1;
-	if ( chopper->input & (1 << CHOPPER_LEFT) )
+	if ( chopper->input & (1 << CHOPPER_ROTATE_LEFT) )
 		rctrl += 1;
-	if ( chopper->input & (1 << CHOPPER_RIGHT) )
+	if ( chopper->input & (1 << CHOPPER_ROTATE_RIGHT) )
 		rctrl -= 1;
-
+	if ( chopper->input & (1 << CHOPPER_STRAFE_LEFT) )
+		sctrl -= 1;
+	if ( chopper->input & (1 << CHOPPER_STRAFE_RIGHT) )
+		sctrl += 1;
 
 	switch(tctrl) {
 	case 0:
 		/* no throttle control, coast down to stationary */
-		if ( chopper->throttle_time > 0 )
-			chopper->throttle_time--;
-		else if ( chopper->throttle_time < 0 )
-			chopper->throttle_time++;
+		if ( chopper->f_throttle_time > 0 )
+			chopper->f_throttle_time--;
+		else if ( chopper->f_throttle_time < 0 )
+			chopper->f_throttle_time++;
 		break;
 	case 1:
 		/* add throttle time for acceleration */
-		if ( chopper->throttle_time < VELOCITY_INCREMENTS ) {
-			chopper->throttle_time++;
+		if ( chopper->f_throttle_time < VELOCITY_INCREMENTS ) {
+			chopper->f_throttle_time++;
 		}
 		break;
 	case -1:
 		/* add brake time for deceleration */
-		if ( chopper->throttle_time > -VELOCITY_INCREMENTS ) {
-			chopper->throttle_time--;
+		if ( chopper->f_throttle_time > -VELOCITY_INCREMENTS ) {
+			chopper->f_throttle_time--;
+		}
+		break;
+	default:
+		abort();
+		break;
+	}
+
+	switch(sctrl) {
+	case 0:
+		/* no throttle control, coast down to stationary */
+		if ( chopper->s_throttle_time > 0 )
+			chopper->s_throttle_time--;
+		else if ( chopper->s_throttle_time < 0 )
+			chopper->s_throttle_time++;
+		break;
+	case 1:
+		/* add throttle time for acceleration */
+		if ( chopper->s_throttle_time < VELOCITY_INCREMENTS ) {
+			chopper->s_throttle_time++;
+		}
+		break;
+	case -1:
+		/* add brake time for deceleration */
+		if ( chopper->s_throttle_time > -VELOCITY_INCREMENTS ) {
+			chopper->s_throttle_time--;
 		}
 		break;
 	default:
@@ -309,8 +340,9 @@ void chopper_think(chopper_t chopper)
 	}
 
 	/* calculate velocity */
-	chopper->oldvelocity = chopper->velocity;
-	chopper->velocity = chopper->throttle_time * VELOCITY_UNIT;
+	chopper->oldfvelocity = chopper->fvelocity;
+	chopper->fvelocity = chopper->f_throttle_time * VELOCITY_UNIT;
+	chopper->svelocity = chopper->s_throttle_time * VELOCITY_UNIT;
 
 	switch(rctrl) {
 	case -1:
@@ -330,9 +362,9 @@ void chopper_think(chopper_t chopper)
 	v_copy(chopper->oldorigin, chopper->origin);
 	chopper->oldheading = chopper->heading;
 
-	chopper->move[0] = chopper->velocity * sin(chopper->heading);
+	chopper->move[0] = (chopper->fvelocity * sin(chopper->heading)) + (chopper->svelocity * sin(chopper->heading - M_PI_2));
 	chopper->move[1] = 0.0;
-	chopper->move[2] = chopper->velocity * cos(chopper->heading);
+	chopper->move[2] = (chopper->fvelocity * cos(chopper->heading)) + (chopper->svelocity * cos(chopper->heading - M_PI_2));
 
 	v_add(chopper->origin, chopper->move);
 	chopper->heading += chopper->avelocity;
@@ -346,8 +378,10 @@ void chopper_control(chopper_t chopper, unsigned int ctrl, int down)
 	switch(ctrl) {
 	case CHOPPER_THROTTLE:
 	case CHOPPER_BRAKE:
-	case CHOPPER_LEFT:
-	case CHOPPER_RIGHT:
+	case CHOPPER_ROTATE_LEFT:
+	case CHOPPER_ROTATE_RIGHT:
+	case CHOPPER_STRAFE_LEFT:
+	case CHOPPER_STRAFE_RIGHT:
 		if ( down ) {
 			chopper->input |= (1 << ctrl);
 		}else{
@@ -359,3 +393,9 @@ void chopper_control(chopper_t chopper, unsigned int ctrl, int down)
 		break;
 	}
 }
+
+void chopper_control_release_all(chopper_t chopper)
+{
+	chopper->input = 0;
+}
+
