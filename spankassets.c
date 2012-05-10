@@ -3,6 +3,7 @@
  * Released under the terms of GPLv3
 */
 #include <punani/punani.h>
+#include <punani/vec.h>
 #include <ctype.h>
 #include <math.h>
 #include <unistd.h>
@@ -30,6 +31,9 @@ struct asset {
 	unsigned int a_offset;
 	float a_norm[D];
 	uint8_t a_rgba[4];
+	float a_mins[3];
+	float a_maxs[3];
+	float a_radius;
 };
 
 struct asset_list {
@@ -139,8 +143,8 @@ static int parse_float(const char *str, float *val)
 	return 1;
 }
 
-static struct rcmd *parse_record(struct asset_list *l, struct asset *a,
-				 char *str)
+static struct rcmd *rcmd_vert(struct asset_list *l, struct asset *a, char *str)
+
 {
 	struct rcmd *r;
 	unsigned int i;
@@ -165,8 +169,13 @@ static struct rcmd *parse_record(struct asset_list *l, struct asset *a,
 
 	for(i = 0; i < D; i++) {
 		r->r_vbo.v_vert[i] = (float)vec[i];
+		if ( r->r_vbo.v_vert[i] < a->a_mins[i] )
+			a->a_mins[i] = r->r_vbo.v_vert[i];
+		if ( r->r_vbo.v_vert[i] > a->a_maxs[i] )
+			a->a_maxs[i] = r->r_vbo.v_vert[i];
 	}
 
+	a->a_radius = f_max(a->a_radius, v_abslen(r->r_vbo.v_vert));
 	for(i = 0; i < D; i++) {
 		r->r_vbo.v_norm[i] = a->a_norm[i];
 	}
@@ -176,15 +185,7 @@ static struct rcmd *parse_record(struct asset_list *l, struct asset *a,
 	}
 
 	list_add_tail(&r->r_list, &a->a_rcmd);
-	return r;
-}
-
-static struct rcmd *rcmd_vert(struct asset_list *l, struct asset *a, char *str)
-{
-	struct rcmd *r;
-	r = parse_record(l, a, str);
-	if ( r )
-		a->a_num_verts++;
+	a->a_num_verts++;
 	return r;
 }
 
@@ -509,11 +510,20 @@ static int write_asset_descs(struct asset_list *l, FILE *fout)
 
 	printf("Writing %lu byte asset descriptors:\n", sizeof(d));
 	list_for_each_entry(a, &l->l_assets, a_list) {
+		unsigned int i;
+
 		memset(&d, 0, sizeof(d));
 		snprintf((char *)d.a_name, sizeof(d.a_name), "%s", a->a_name);
 		d.a_off = a->a_offset;
 		d.a_num_idx = a->a_num_verts;
-		printf(" - %s\n", d.a_name);
+		d.a_radius = a->a_radius;
+
+		for(i = 0; i < D; i++) {
+			d.a_mins[i] = a->a_mins[i];
+			d.a_maxs[i] = a->a_maxs[i];
+		}
+
+		printf(" - %s (radius %f)\n", d.a_name, d.a_radius);
 		if ( fwrite(&d, sizeof(d), 1, fout) != 1 )
 			return 0;
 	}
