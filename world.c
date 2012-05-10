@@ -136,7 +136,7 @@ static void render_lit(world_t w, float lerp)
 	renderer_t r = w->render;
 	vec3_t cpos;
 
-	glEnable(GL_LIGHTING);
+	glEnable(GL_LIGHT0);
 
 	if ( w->do_shadows ) {
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -171,15 +171,15 @@ static void render_unlit(world_t w, float lerp)
 {
 	if ( !w->do_shadows )
 		return;
-	glDisable(GL_LIGHTING);
+	glDisable(GL_LIGHT0);
 	do_render(w, lerp, NULL);
 }
 
 static void recalc_light(world_t w)
 {
 	static const vec3_t c_noon = {1.0, 0.87, 1.0};
-	static const vec3_t c_dusk = {1.0, 0.5, 0.3};
-	static const vec3_t c_night = {0.1, 0.1, 0.4};
+	static const vec3_t c_dusk = {0.8, 0.4, 0.24};
+	static const vec3_t c_night = {0.05, 0.05, 0.2};
 	vec3_t color;
 	float lerp;
 
@@ -192,7 +192,7 @@ static void recalc_light(world_t w)
 		color[1] = c_dusk[1] + (c_noon[1] - c_dusk[1]) * lerp;
 		color[2] = c_dusk[2] + (c_noon[2] - c_dusk[2]) * lerp;
 	}else{
-		lerp = -(w->lpos[1] * 24);
+		lerp = -(w->lpos[1] * 4);
 		if ( lerp > 1.0 )
 			lerp = 1.0;
 		w->lpos[1] = sin(-w->lightAngle);
