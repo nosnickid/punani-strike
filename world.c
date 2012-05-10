@@ -28,6 +28,7 @@ struct _world {
 	renderer_t render;
 	map_t map;
 	chopper_t apache;
+	cvar_ns_t cvars;
 	light_t light;
 	font_t font;
 	vec3_t lpos;
@@ -71,19 +72,28 @@ static void *ctor(renderer_t r, void *common)
 	world->font = font_load(r, "data/font/carbon.png", 16, 16);
 	if ( NULL == world->font )
 		goto out_free_light;
-		
+
 	world->lightRate = 1440;
 	world->light_ticks = 10;
+
+	world->cvars = cvar_ns_new("world");
+	if ( NULL == world->cvars )
+		goto out_free_font;
 		
-	cvar_register_float("world", "time", &world->lightAngle);
-	cvar_register_float("world", "lightRate", &world->lightRate);
-	cvar_register_uint("world", "tpf", &world->light_ticks);
+	cvar_register_float(world->cvars, "time", CVAR_FLAG_SAVE_ALWAYS, &world->lightAngle);
+	cvar_register_float(world->cvars, "lightRate", CVAR_FLAG_SAVE_NOTDEFAULT, &world->lightRate);
+	cvar_register_uint(world->cvars, "tpf", CVAR_FLAG_SAVE_NOTDEFAULT, &world->light_ticks);
 		
-	cvar_load("world.cfg");
-		
+	cvar_ns_load(world->cvars);
+
+	world->fcnt = (world->lightAngle / (M_PI / world->lightRate));
+	world->fcnt *= world->light_ticks;
+	
 	/* success */
 	goto out;
 
+out_free_font:
+	font_free(world->font);
 out_free_light:
 	light_free(world->light);
 out_free_chopper:
@@ -232,7 +242,7 @@ static void render(void *priv, float lerp)
 			renderer_fps(r));
 	font_printf(world->font, 8, 24, "x: %.3f y: %.3f", cpos[0], cpos[2]);
 
-	mins = (world->fcnt * (M_PI / 14400.0)) * (1440.0 / (2 * M_PI));
+	mins = (world->fcnt * (M_PI / (world->lightRate * world->light_ticks))) * (1440.0 / (2 * M_PI));
 	mins += 6 * 60;
 	mins %= 1440;
 	font_printf(world->font, 8, 44, "local time: %02d:%02d",
@@ -241,9 +251,9 @@ static void render(void *priv, float lerp)
 
 static void dtor(void *priv)
 {
-	cvar_save("world.cfg");
-
 	struct _world *world = priv;
+	cvar_ns_save(world->cvars);
+	cvar_ns_free(world->cvars);
 	light_free(world->light);
 	chopper_free(world->apache);
 	map_free(world->map);

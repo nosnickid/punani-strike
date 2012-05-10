@@ -7,6 +7,7 @@
 #include <punani/vec.h>
 #include <punani/game.h>
 #include <punani/renderer.h>
+#include <punani/particles.h>
 #include <punani/light.h>
 #include <punani/punani_gl.h>
 #include <punani/cvar.h>
@@ -31,6 +32,8 @@ struct _renderer {
 	unsigned int vid_depth, vid_fullscreen;
 	float fps;
 	unsigned int vid_wireframe;
+	unsigned int vid_aa;
+	cvar_ns_t cvars;
 };
 
 /* Help us to setup the viewing frustum */
@@ -164,7 +167,7 @@ static void do_render_3d(renderer_t r, int wireframe)
 /* Prepare OpenGL for 3d rendering */
 void renderer_render_3d(renderer_t r)
 {
-	float light[4] = {0.2, 0.2, 0.2, 1.0};
+	float light[4] = {0.3, 0.3, 0.3, 1.0};
 
 	/* Reset projection matrix */
 	glMatrixMode(GL_PROJECTION);
@@ -264,8 +267,7 @@ int renderer_mode(renderer_t r, const char *title,
 			unsigned int depth, unsigned int fullscreen)
 {
 	int f = SDL_OPENGL;
-	int tryfsaa = 1;
-	int aa = 4;
+	int aa = r->vid_aa;
 
 	if ( r->screen )
 		SDL_Quit();
@@ -287,7 +289,7 @@ again:
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
-	if ( tryfsaa ) {
+	if ( aa ) {
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, aa);
 	}else{
@@ -305,9 +307,9 @@ again:
 	/* Setup the SDL display */
 	r->screen = SDL_SetVideoMode(x, y, depth, f);
 	if ( r->screen == NULL ) {
-		if ( tryfsaa ) {
+		if ( aa ) {
 			con_printf("fsaa not available\n");
-			tryfsaa = 0;
+			aa = 0;
 			goto again;
 		}
 		fprintf(stderr, "SDL_SetVideoMode: %s\n", SDL_GetError());
@@ -333,7 +335,6 @@ again:
 	glEnable(GL_COLOR_MATERIAL);
 	glEnable(GL_MULTISAMPLE);
 
-	cvar_register_uint("render", "wireframe", &r->vid_wireframe);
 	r->fps = 30.0;
 
 	return 1;
@@ -563,12 +564,27 @@ renderer_t renderer_new(game_t g)
 	r->game = g;
 	r->texops = &tex_gl;
 
+	r->cvars = cvar_ns_new("render");
+
+	cvar_register_uint(r->cvars, "wireframe",
+				CVAR_FLAG_SAVE_NOTDEFAULT,
+				&r->vid_wireframe);
+	cvar_register_uint(r->cvars, "aa",
+				CVAR_FLAG_SAVE_NOTDEFAULT,
+				&r->vid_aa);
+	cvar_ns_load(r->cvars);
+
+	particles_init();
+
 	return r;
 }
 
 void renderer_free(renderer_t r)
 {
 	if ( r ) {
+		cvar_ns_save(r->cvars);
+		cvar_ns_free(r->cvars);
+		particles_exit();
 		SDL_Quit();
 		free(r);
 	}
