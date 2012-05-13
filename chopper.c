@@ -14,11 +14,13 @@
 #include <math.h>
 #include "list.h"
 
-#define VELOCITY_INCREMENTS	7
-#define VELOCITY_UNIT		1
+static unsigned int velocity_increments = 7;
+static float velocity_unit = 1;
 
-static unsigned int rotation_increments = 15;
-static float rotation_unit = 0.15f;
+static unsigned int rotation_increments = 10;
+static float rotation_unit = 0.052f;
+
+static float vel_rot_factor = 0.0f;
 
 #define ALTITUDE_INCREMENTS	7
 #define ALTITUDE_UNIT		1
@@ -127,6 +129,11 @@ static chopper_t get_chopper(const char *file, const vec3_t pos, float heading)
 	cvar_register_float(c->cvars, "missile_speed", CVAR_FLAG_SAVE_NOTDEFAULT, &c->missile_speed);
 	cvar_register_float(c->cvars, "rotu", CVAR_FLAG_SAVE_NOTDEFAULT, &rotation_unit);
 	cvar_register_uint(c->cvars, "roti", CVAR_FLAG_SAVE_NOTDEFAULT, &rotation_increments);
+
+	cvar_register_float(c->cvars, "velu", CVAR_FLAG_SAVE_NOTDEFAULT, &velocity_unit);
+	cvar_register_uint(c->cvars, "veli", CVAR_FLAG_SAVE_NOTDEFAULT, &velocity_increments);
+
+	cvar_register_float(c->cvars, "vrfactor", CVAR_FLAG_SAVE_NOTDEFAULT, &vel_rot_factor);
 
 	cvar_ns_load(c->cvars);
 
@@ -258,7 +265,7 @@ void chopper_fire(chopper_t c, renderer_t r, unsigned int time)
 	if ( NULL == m->m_trail )
 		goto err_free_mesh;
 
-	pitch = (M_PI / 2.0) + (c->f_velocity / (VELOCITY_INCREMENTS * VELOCITY_UNIT)) * (M_PI / 2.0);
+	pitch = (M_PI / 2.0) + (c->f_velocity / (velocity_increments* velocity_unit)) * (M_PI / 2.0);
 	pitch += M_PI / 8.0;
 	if ( pitch < M_PI / 2.0 )
 		pitch = M_PI / 2.0;
@@ -297,6 +304,7 @@ static void missiles_think(chopper_t c)
 	}
 }
 
+
 static void do_velocity_think(const int ctrl, int *vel_throttle_time, float *vel_velocity, const int vel_increments, const float vel_unit)
 {
 	switch(ctrl) {
@@ -325,6 +333,44 @@ static void do_velocity_think(const int ctrl, int *vel_throttle_time, float *vel
 	}
 	*vel_velocity = *vel_throttle_time * vel_unit;
 }
+
+static void quad_velocity_think(const int ctrl, int *vel_throttle_time, float *vel_velocity, const int vel_increments, const float vel_unit)
+{
+	/* based around  quad(x) = 1 + (-1 * ((x-1)*(x-1))), giving a smooth increase from 0..1 over an 0..1 input range. */
+	switch(ctrl) {
+	case 0:
+		/* no throttle control, coast down to stationary */
+		if ( *vel_throttle_time > 0 )
+			(*vel_throttle_time)--;
+		else if ( *vel_throttle_time < 0 )
+			(*vel_throttle_time)++;
+		break;
+	case 1:
+		/* add throttle time for acceleration */
+		if ( *vel_throttle_time < vel_increments ) {
+			(*vel_throttle_time)++;
+		}
+		break;
+	case -1:
+		/* add brake time for deceleration */
+		if ( *vel_throttle_time > -vel_increments ) {
+			(*vel_throttle_time)--;
+		}
+		break;
+	default:
+		abort();
+		break;
+	}
+
+	float quad;
+	float x;
+
+	/* ranges from -1 .. 0 .. +1 */
+	x = (*vel_throttle_time) / (float)vel_increments;
+	quad = 1 + (-1 `* ((x-1)*(x-1)));
+	*vel_velocity = quad * vel_unit * vel_increments;
+}
+
 
 void chopper_think(chopper_t chopper)
 {
@@ -355,8 +401,8 @@ void chopper_think(chopper_t chopper)
 	/* calculate velocity */
 	chopper->oldf_velocity = chopper->f_velocity;
 
-	do_velocity_think(tctrl, &chopper->f_throttle_time, &chopper->f_velocity, VELOCITY_INCREMENTS, VELOCITY_UNIT);
-	do_velocity_think(rctrl, &chopper->rot_throttle_time, &chopper->rot_velocity, rotation_increments, rotation_unit);
+	do_velocity_think(tctrl, &chopper->f_throttle_time, &chopper->f_velocity, velocity_increments, velocity_unit);
+	quad_velocity_think(rctrl, &chopper->rot_throttle_time, &chopper->rot_velocity, rotation_increments, rotation_unit);
 	do_velocity_think(actrl, &chopper->alt_throttle_time, &chopper->alt_velocity, ALTITUDE_INCREMENTS, ALTITUDE_UNIT);
 	do_velocity_think(sctrl, &chopper->s_throttle_time, &chopper->s_velocity, ALTITUDE_INCREMENTS, ALTITUDE_UNIT);
 
